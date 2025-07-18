@@ -417,3 +417,20 @@ class Unet(nn.Module):
         x = self.final_res_block(x, t, c)
         return self.final_conv(x)
 
+
+def get_unet(config):
+    return Unet(
+	num_classes = config.num_classes,
+	in_channels = config.C,
+	out_channels= config.C,
+	dim = config.unet_channels,
+	dim_mults = config.unet_dim_mults,
+	resnet_block_groups = config.unet_resnet_block_groups,
+	learned_sinusoidal_cond = config.unet_learned_sinusoidal_cond,
+	random_fourier_features = config.unet_random_fourier_features,
+	learned_sinusoidal_dim = config.unet_learned_sinusoidal_dim,
+	attn_dim_head = config.unet_attn_dim_head,
+	attn_heads = config.unet_attn_heads,
+	use_classes = config.unet_use_classes,
+    )
+
