@@ -29,6 +29,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
 
+# to broadcast (1-t) and t with x0 and x1
 def wide(t):
     return t[:, None, None, None]
 
@@ -62,6 +63,12 @@ class Model(nn.Module):
 
         return self._arch(xt, t, y)
 
+def clip_grad_norm(model):
+    return torch.nn.utils.clip_grad_norm_(
+        model.parameters(), max_norm = 1, norm_type= 2.0, error_if_nonfinite = False
+    )
+
+
 # for plotting images
 def to_grid(x, normalize):
     nrow = int(np.floor(np.sqrt(x.shape[0])))
@@ -70,11 +77,6 @@ def to_grid(x, normalize):
     else:
         kwargs = {}
     return make_grid(x, nrow = nrow, **kwargs)
-
-def clip_grad_norm(model):
-    return torch.nn.utils.clip_grad_norm_(
-        model.parameters(), max_norm = 1, norm_type= 2.0, error_if_nonfinite = False
-    )
 
 
 # cifar
@@ -143,15 +145,15 @@ class Trainer:
         wandb.log({'sample': sample}, step=self.step)
 
     @torch.no_grad()
-    def definitely_sample(self,):
+    def sample(self,):
         self.model.eval()
         batch = self.prepare_batch(batch=None, overfit=True)
-        steps = self.config.sample_steps
-       
         xt = batch.x0
         N = xt.shape[0]
         times = torch.linspace(
-            self.config.t_min_sample, self.config.t_max_sample, steps
+            self.config.t_min_sample, 
+            self.config.t_max_sample,
+            self.config.sample_steps,
         ).to(xt.device)
         dt = times[1] - times[0]
         ones = torch.ones(N,).to(xt.device)
@@ -161,11 +163,7 @@ class Trainer:
         x1_hat = xt
         self.maybe_log_wandb(x1_hat)
 
-    @torch.no_grad()
-    def maybe_sample(self,):
-        if self.step % self.config.sample_every == 0:
-            self.definitely_sample()
-    
+            
     def optimizer_step(self,):
         clip_grad_norm(self.model)
         self.optimizer.step()
@@ -181,9 +179,9 @@ class Trainer:
         target = batch.x1 - batch.x0
         return self.image_norm(model_out - target).mean()
 
-    def fit(self,):
+    def train_loop(self,):
 
-        self.definitely_sample()
+        self.sample()
         print("starting training")
         while self.step < self.config.max_steps:
 
@@ -199,7 +197,9 @@ class Trainer:
                 loss = self.training_step(batch)
                 loss.backward()
                 self.optimizer_step()            
-                self.maybe_sample()
+                
+                if self.step % self.config.sample_every == 0:
+                    self.sample()
 
                 if self.step  % self.config.print_loss_every == 0:
                     print(f"Grad step {self.step}. Loss:{loss.item()}")
@@ -255,7 +255,7 @@ def main():
 
     conf = Config()
     trainer = Trainer(conf)
-    trainer.fit()
+    trainer.train_loop()
 
 if __name__ == '__main__':
     main() 
