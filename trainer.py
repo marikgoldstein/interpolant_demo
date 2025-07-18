@@ -62,7 +62,7 @@ class Model(nn.Module):
 
         return self._arch(xt, t, y)
 
-
+# for plotting images
 def to_grid(x, normalize):
     nrow = int(np.floor(np.sqrt(x.shape[0])))
     if normalize:
@@ -73,9 +73,11 @@ def to_grid(x, normalize):
 
 def clip_grad_norm(model):
     return torch.nn.utils.clip_grad_norm_(
-        model.parameters(), max_norm = 10000, norm_type= 2.0, error_if_nonfinite = False
+        model.parameters(), max_norm = 1, norm_type= 2.0, error_if_nonfinite = False
     )
 
+
+# cifar
 def get_dataloader(config):
     Flip = T.RandomHorizontalFlip()
     Tens = T.ToTensor()
@@ -100,7 +102,7 @@ class Trainer:
         self.model.to(self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config.base_lr)
         self.current_epoch = 0
-        self.global_step = 0
+        self.step = 0
         self.loader = get_dataloader(config) 
         self.overfit_batch  = next(iter(self.loader)) 
         self.time_dist = torch.distributions.Uniform(low=self.config.t_min_train, high=self.config.t_max_train)
@@ -138,7 +140,7 @@ class Trainer:
 
         sample = to_grid(sample, normalize = True)
         sample = wandb.Image(sample)
-        wandb.log({'sample': sample}, step=self.global_step)
+        wandb.log({'sample': sample}, step=self.step)
 
     @torch.no_grad()
     def definitely_sample(self,):
@@ -161,14 +163,14 @@ class Trainer:
 
     @torch.no_grad()
     def maybe_sample(self,):
-        if self.global_step % self.config.sample_every == 0:
+        if self.step % self.config.sample_every == 0:
             self.definitely_sample()
     
     def optimizer_step(self,):
         clip_grad_norm(self.model)
         self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
-        self.global_step += 1
+        self.step += 1
     
     def image_norm(self, x):
         return x.pow(2).sum(-1).sum(-1).sum(-1)
@@ -183,13 +185,13 @@ class Trainer:
 
         self.definitely_sample()
         print("starting training")
-        while self.global_step < self.config.max_steps:
+        while self.step < self.config.max_steps:
 
             print(f"starting epoch {self.current_epoch}")
 
             for batch_idx, batch in enumerate(self.loader):
                            
-                if self.global_step >= self.config.max_steps:
+                if self.step >= self.config.max_steps:
                     break
 
                 batch = self.prepare_batch(batch, overfit = self.config.overfit)
@@ -199,8 +201,8 @@ class Trainer:
                 self.optimizer_step()            
                 self.maybe_sample()
 
-                if self.global_step % self.config.print_loss_every == 0:
-                    print(f"Grad step {self.global_step}. Loss:{loss.item()}")
+                if self.step  % self.config.print_loss_every == 0:
+                    print(f"Grad step {self.step}. Loss:{loss.item()}")
 
             self.current_epoch += 1
 
